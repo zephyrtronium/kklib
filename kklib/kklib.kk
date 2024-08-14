@@ -139,40 +139,20 @@ abstract struct kk-datatype
 //     is-null = lib-datatype-is-null(v)
 //   )
 
-abstract ref struct kk-block
-  tag: kk-tag
-  is-valid: bool
-  is-unique: bool
-  is-thread-shared: bool
-
-extern lib-block-tag(x: any): int32
-  c "kk_lib_block_tag"
-extern lib-block-flags(x: any): int32
-  c "kk_lib_block_flags"
-
-pub fun kk-block(x: a): kk-block
-  val v = lib-a2any(x)
-  val flags = lib-block-flags(v)
-  Kk-block(
-    tag = lib-tag(lib-block-tag(v)),
-    is-valid = flags.and(1.int32).bool,
-    is-unique = flags.and(2.int32).bool,
-    is-thread-shared = flags.and(4.int32).bool
-  )
-
-pub fun kk-block/show(b: kk-block): string
-  val fields = [
-    (b.is-valid, "valid"),
-    (b.is-unique, "unique"),
-    (b.is-thread-shared, "thread-shared")
-  ].select
-  ["block:", b.tag.show, fields.join(", ")].filter(is-notempty).join(" ")
-
-abstract ref struct kk-box
+abstract struct kk-box
   is-ptr: bool
   is-value: bool
   is-null: bool
   is-any: bool
+  content: kk-box-content
+
+abstract type kk-box-content
+  Value
+  Block
+    tag: kk-tag
+    is-valid: bool
+    is-unique: bool
+    is-thread-shared: bool
 
 inline extern lib-box-is-ptr(x: any): bool
   c inline "kk_box_is_ptr(#1)"
@@ -186,7 +166,17 @@ inline extern lib-box-is-any(x: any): bool
 // Reflect an arbitrary Koka value.
 pub fun kk-box(x: a): kk-box
   val v = lib-a2any(x)
+  val content = if lib-box-is-value(v) then Value
+  else
+    val flags = lib-block-flags(v)
+    Block(
+      tag = lib-tag(lib-block-tag(v)),
+      is-valid = flags.and(1.int32).bool,
+      is-unique = flags.and(2.int32).bool,
+      is-thread-shared = flags.and(4.int32).bool
+    )
   Kk-box(
+    content = content,
     is-ptr = lib-box-is-ptr(v),
     is-value = lib-box-is-value(v),
     is-null = lib-box-is-null(v),
@@ -199,5 +189,22 @@ pub fun kk-box/show(b: kk-box): string
     (b.is-value, "value"),
     (b.is-null, "null"),
     (b.is-any, "any"),
-  ].select
-  "box: " ++ fields.join(", ")
+  ].select.join(", ")
+  fields ++ " box(" ++ b.content.show ++ ")"
+
+extern lib-block-tag(x: any): int32
+  c "kk_lib_block_tag"
+extern lib-block-flags(x: any): int32
+  c "kk_lib_block_flags"
+
+pub fun kk-box-content/show(b: kk-box-content): string
+  match b
+    Value -> "value"
+    Block(tag, is-valid, is-unique, is-thread-shared) ->
+      val fields = [
+        (!is-valid, "invalid"),
+        (is-valid, "valid"),
+        (is-unique, "unique"),
+        (is-thread-shared, "thread-shared")
+      ].select.join(", ")
+      fields ++ " block(" ++ tag.show ++ ")"
